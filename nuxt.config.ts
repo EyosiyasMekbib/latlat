@@ -3,14 +3,11 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
   modules: [
-    '@nuxtjs/supabase',
     '@nuxtjs/tailwindcss',
     'shadcn-nuxt',
-    '@nuxtjs/color-mode'
+    '@nuxtjs/color-mode',
+    '@nuxt/icon'
   ],
-  supabase: {
-    
-  },
   shadcn: {
     /**
      * Prefix for all the imported component
