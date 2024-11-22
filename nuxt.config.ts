@@ -18,5 +18,8 @@ export default defineNuxtConfig({
      * @default "./components/ui"
      */
     componentDir: './components/ui'
+  },
+  runtimeConfig: {
+    mongodbUri: process.env.MONGODB_URI
   }
 })
