@@ -1,7 +1,8 @@
 import { MongoClient } from 'mongodb'
+import type { GameSession, Transaction } from '~/types/mongodb'
 
-const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017'
-const client = new MongoClient(uri)
+const uri = process.env.MONGODB_URI
+const client = new MongoClient(uri!)
 
 export default defineEventHandler(async (event) => {
   try {
@@ -10,9 +11,16 @@ export default defineEventHandler(async (event) => {
     
     await client.connect()
     const database = client.db('latlat')
-    const sessions = database.collection('games')
+    const sessions = database.collection<GameSession>('games')
     
-    // Update player balance and bank balance
+    const newTransaction: Transaction = {
+      playerName,
+      amount,
+      type: amount > 0 ? 'WIN' : 'LOSS',
+      timestamp: new Date(),
+      description: amount > 0 ? 'Won bet' : 'Lost bet'
+    }
+    
     const result = await sessions.updateOne(
       { 
         sessionCode,
@@ -25,13 +33,7 @@ export default defineEventHandler(async (event) => {
           bankBalance: bankChange
         },
         $push: {
-          transactions: {
-            playerName,
-            amount,
-            type: amount > 0 ? 'WIN' : 'LOSS',
-            timestamp: new Date(),
-            description: amount > 0 ? 'Won bet' : 'Lost bet'
-          }
+          transactions: newTransaction
         }
       }
     )
@@ -45,11 +47,14 @@ export default defineEventHandler(async (event) => {
     
     return { success: true }
   } catch (error) {
-    console.error('Failed to process bet:', error)
-    throw createError({
-      statusCode: 500,
-      message: 'Failed to process bet'
-    })
+    if (error instanceof Error) {
+      console.error('Failed to process bet:', error)
+      throw createError({
+        statusCode: 500,
+        message: `Failed to process bet: ${error.message}`
+      })
+    }
+    throw error
   } finally {
     await client.close()
   }

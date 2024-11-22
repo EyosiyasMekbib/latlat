@@ -1,31 +1,23 @@
 import { MongoClient } from 'mongodb'
+import type { GameSession, Player, Transaction } from '~/types/mongodb'
 
-const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017'
-const client = new MongoClient(uri)
-
-// Define a type for the player
-type Player = {
-  name: string;
-  budget: number;
-  // Add other properties as needed
-}
+const uri = process.env.MONGODB_URI
+const client = new MongoClient(uri!)
 
 export default defineEventHandler(async (event) => {
   try {
     const sessionCode = event.context.params?.code
-    const body = await readBody(event)
+    const body = await readBody<{
+      initialFee: number
+      players: Player[]
+      bankBalance: number
+    }>(event)
     
     await client.connect()
     const database = client.db('latlat')
-    const sessions = database.collection('games')
+    const sessions = database.collection<GameSession>('games')
     
-    // Deduct initial fee from players and create transactions
-    const playersWithDeductedFee = body.players.map((player: Player) => ({
-      ...player,
-      budget: player.budget - body.initialFee
-    }))
-
-    const initialTransactions = body.players.map((player: Player) => ({
+    const initialTransactions: Transaction[] = body.players.map(player => ({
       playerName: player.name,
       amount: -body.initialFee,
       type: 'INITIAL_FEE',
@@ -37,7 +29,10 @@ export default defineEventHandler(async (event) => {
       { sessionCode, game: 'latlat' },
       {
         $set: {
-          players: playersWithDeductedFee,
+          players: body.players.map(p => ({
+            ...p,
+            budget: p.budget - body.initialFee
+          })),
           initialFee: body.initialFee,
           bankBalance: body.bankBalance
         },
@@ -56,11 +51,14 @@ export default defineEventHandler(async (event) => {
     
     return { success: true }
   } catch (error) {
-    console.error('Failed to continue game:', error)
-    throw createError({
-      statusCode: 500,
-      message: 'Failed to continue game'
-    })
+    if (error instanceof Error) {
+      console.error('Failed to continue game:', error)
+      throw createError({
+        statusCode: 500,
+        message: `Failed to continue game: ${error.message}`
+      })
+    }
+    throw error
   } finally {
     await client.close()
   }
