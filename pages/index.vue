@@ -38,6 +38,9 @@ const players = ref<Player[]>([
 const recentSessions = ref<Session[]>([])
 const router = useRouter()
 
+// Add loading state
+const isCreatingSession = ref(false)
+
 function generateSessionCode() {
   // Generate a 6-character alphanumeric code
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -60,6 +63,8 @@ function removePlayer(index: number) {
 
 async function handleSubmit() {
   try {
+    isCreatingSession.value = true
+    
     // Validate inputs
     if (initialFee.value <= 0) {
       alert('Please enter a valid initial fee')
@@ -92,12 +97,13 @@ async function handleSubmit() {
     })
 
     if (response.success) {
-      // Navigate to the game page
-      router.push(`/game/${sessionCode.value}`)
+      await router.push(`/game/${sessionCode.value}`)
     }
   } catch (error) {
     console.error('Failed to create session:', error)
     alert('Failed to create session. Please try again.')
+  } finally {
+    isCreatingSession.value = false
   }
 }
 
@@ -220,8 +226,15 @@ onMounted(() => {
         </div>
 
         <DialogFooter>
-          <Button type="button" @click="handleSubmit">
-            Create Session
+          <Button 
+            type="button" 
+            @click="handleSubmit"
+            :disabled="isCreatingSession"
+          >
+            <div v-if="isCreatingSession" 
+                 class="animate-spin mr-2 h-4 w-4 border-b-2 border-white rounded-full">
+            </div>
+            {{ isCreatingSession ? 'Creating...' : 'Create Session' }}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -90,6 +90,38 @@ const playerBalanceUpdates = ref<PlayerBalanceUpdate[]>([])
 
 const playersToRemove = ref<string[]>([])
 
+const isLoading = ref(true)
+
+const isBetting = ref(false)
+
+const isEndingGame = ref(false)
+
+const isContinuingGame = ref(false)
+
+const isUpdatingSettings = ref(false)
+
+
+
+// Add this function to get the winner
+
+function getWinner() {
+
+  if (!session.value) return null
+
+  return session.value.players.reduce((winner, player) => {
+
+    if (!winner || player.budget > winner.budget) {
+
+      return player
+
+    }
+
+    return winner
+
+  }, null as Player | null)
+
+}
+
 
 
 // Fetch session data
@@ -97,6 +129,8 @@ const playersToRemove = ref<string[]>([])
 async function fetchSession() {
 
   try {
+
+    isLoading.value = true
 
     const response = await $fetch<{ session: GameSession }>(`/api/sessions/${sessionCode}`)
 
@@ -106,13 +140,25 @@ async function fetchSession() {
 
     if (session.value?.bankBalance === 0) {
 
-      showGameEndDialog.value = true
+      const winner = getWinner()
+
+      if (winner) {
+
+        const profit = winner.budget - winner.initialBudget
+
+        showGameEndDialog.value = true
+
+      }
 
     }
 
   } catch (error) {
 
     console.error('Failed to fetch session:', error)
+
+  } finally {
+
+    isLoading.value = false
 
   }
 
@@ -146,13 +192,15 @@ async function placeBet(won: boolean) {
 
   
 
-  const currentPlayer = session.value.players[currentPlayerIndex.value]
-
-  const amount = betAmount.value
-
-
-
   try {
+
+    isBetting.value = true
+
+    const currentPlayer = session.value.players[currentPlayerIndex.value]
+
+    const amount = betAmount.value
+
+
 
     const response = await $fetch(`/api/sessions/${sessionCode}/bet`, {
 
@@ -188,6 +236,10 @@ async function placeBet(won: boolean) {
 
     alert('Failed to process bet')
 
+  } finally {
+
+    isBetting.value = false
+
   }
 
 }
@@ -208,6 +260,8 @@ async function endGame() {
 
   try {
 
+    isEndingGame.value = true
+
     await $fetch(`/api/sessions/${sessionCode}/end`, {
 
       method: 'POST'
@@ -219,6 +273,10 @@ async function endGame() {
   } catch (error) {
 
     console.error('Failed to end game:', error)
+
+  } finally {
+
+    isEndingGame.value = false
 
   }
 
@@ -232,25 +290,35 @@ async function continueGame() {
 
   
 
-  showGameEndDialog.value = false
+  try {
 
-  newInitialFee.value = session.value.initialFee
+    isContinuingGame.value = true
 
-  
+    showGameEndDialog.value = false
 
-  // Initialize balance updates for each player
+    newInitialFee.value = session.value.initialFee
 
-  playerBalanceUpdates.value = session.value.players.map(player => ({
+    
 
-    name: player.name,
+    // Initialize balance updates for each player
 
-    additionalBalance: 0
+    playerBalanceUpdates.value = session.value.players.map(player => ({
 
-  }))
+      name: player.name,
 
-  
+      additionalBalance: 0
 
-  showContinueDialog.value = true
+    }))
+
+    
+
+    showContinueDialog.value = true
+
+  } finally {
+
+    isContinuingGame.value = false
+
+  }
 
 }
 
@@ -263,6 +331,8 @@ async function updateGameSettings() {
   
 
   try {
+
+    isUpdatingSettings.value = true
 
     // Update players with their new balances
 
@@ -333,6 +403,10 @@ async function updateGameSettings() {
     console.error('Failed to update game settings:', error)
 
     alert('Failed to update game settings')
+
+  } finally {
+
+    isUpdatingSettings.value = false
 
   }
 
@@ -470,7 +544,7 @@ onMounted(() => {
 
               @click="() => placeBet(true)"
 
-              :disabled="!betAmount || betAmount > (session.bankBalance || 0)"
+              :disabled="!betAmount || betAmount > (session.bankBalance || 0) || isBetting"
 
               variant="default"
 
@@ -478,7 +552,11 @@ onMounted(() => {
 
             >
 
-              Won Bet
+              <div class="animate-spin mr-2 h-4 w-4 border-b-2 border-white rounded-full" 
+
+                   v-if="isBetting"></div>
+
+              {{ isBetting ? 'Processing...' : 'Won Bet' }}
 
             </Button>
 
@@ -696,11 +774,89 @@ onMounted(() => {
 
         <DialogHeader>
 
-          <DialogTitle>Bank is Empty!</DialogTitle>
+          <DialogTitle>Game Over - Bank is Empty!</DialogTitle>
 
-          <DialogDescription>
+          <DialogDescription v-if="session">
 
-            Would you like to continue playing or end the game?
+            <div class="space-y-4 mt-4">
+
+              <!-- Winner Announcement -->
+
+              <div class="bg-green-50 dark:bg-green-900 p-4 rounded-lg">
+
+                <h3 class="font-semibold text-green-700 dark:text-green-300">
+
+                  Winner: {{ getWinner()?.name }}
+
+                </h3>
+
+                <div class="mt-2 space-y-1">
+
+                  <div class="text-sm">
+
+                    Initial Budget: ${{ getWinner()?.initialBudget }}
+
+                  </div>
+
+                  <div class="text-sm">
+
+                    Final Balance: ${{ getWinner()?.budget }}
+
+                  </div>
+
+                  <div class="text-sm font-medium text-green-600 dark:text-green-400">
+
+                    Total Profit: ${{ (getWinner()?.budget ?? 0) - (getWinner()?.initialBudget ?? 0) }}
+
+                  </div>
+
+                </div>
+
+              </div>
+
+
+
+              <!-- Other Players -->
+
+              <div class="space-y-2">
+
+                <h4 class="text-sm font-medium">Final Standings</h4>
+
+                <div class="space-y-1">
+
+                  <div v-for="player in session.players.sort((a, b) => b.budget - a.budget)" 
+
+                       :key="player.name"
+
+                       class="flex justify-between items-center text-sm">
+
+                    <span>{{ player.name }}</span>
+
+                    <span :class="{
+
+                      'text-green-600': player.budget > player.initialBudget,
+
+                      'text-red-600': player.budget < player.initialBudget
+
+                    }">
+
+                      ${{ player.budget }}
+
+                      <span class="text-xs ml-1">
+
+                        ({{ player.budget > player.initialBudget ? '+' : '' }}${{ player.budget - player.initialBudget }})
+
+                      </span>
+
+                    </span>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
 
           </DialogDescription>
 
@@ -710,15 +866,37 @@ onMounted(() => {
 
         <DialogFooter class="flex gap-2">
 
-          <Button @click="endGame" variant="outline">
+          <Button 
 
-            End Game
+            @click="endGame" 
+
+            variant="outline"
+
+            :disabled="isEndingGame"
+
+          >
+
+            <div class="animate-spin mr-2 h-4 w-4 border-b-2 border-primary rounded-full" 
+
+                 v-if="isEndingGame"></div>
+
+            {{ isEndingGame ? 'Ending...' : 'End Game' }}
 
           </Button>
 
-          <Button @click="continueGame">
+          <Button 
 
-            Continue Playing
+            @click="continueGame"
+
+            :disabled="isContinuingGame"
+
+          >
+
+            <div class="animate-spin mr-2 h-4 w-4 border-b-2 border-white rounded-full" 
+
+                 v-if="isContinuingGame"></div>
+
+            {{ isContinuingGame ? 'Processing...' : 'Continue Playing' }}
 
           </Button>
 
@@ -874,7 +1052,7 @@ onMounted(() => {
 
             @click="updateGameSettings"
 
-            :disabled="(session?.players.filter(player => {
+            :disabled="isUpdatingSettings || (session?.players.filter(player => {
 
               const balanceUpdate = playerBalanceUpdates.find(p => p.name === player.name)
 
@@ -886,7 +1064,11 @@ onMounted(() => {
 
           >
 
-            Continue Game
+            <div class="animate-spin mr-2 h-4 w-4 border-b-2 border-white rounded-full" 
+
+                 v-if="isUpdatingSettings"></div>
+
+            {{ isUpdatingSettings ? 'Updating...' : 'Continue Game' }}
 
           </Button>
 
